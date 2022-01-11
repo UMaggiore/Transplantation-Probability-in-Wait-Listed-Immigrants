@@ -1,0 +1,939 @@
+
+
+////////////////////////////////////////////////////////////////////////////////
+**#////     		START PREPARING DIFFERENT DATASETS FOR ANALYSES         ////
+////////////////////////////////////////////////////////////////////////////////
+
+
+cap program drop CMPRSK_PREPARE
+program CMPRSK_PREPARE
+	version 15.0
+	syntax
+
+	*---Start dataset crude non-parametric cumulative probability LDKT - ethinicity
+	stset new_DATE_WL_OUTvsIN, id(PAT_CODE) origin(new_MinDiDataiscrizione) ///
+		fail(new_WL_OUTCOME_OK == 5) ///
+		exit(time new_MinDiDataiscrizione + 365.25*5) sc(365.25)
+
+
+	*--- Start non parametric competing risk analysis
+	timer on 1
+	cap drop  CumInc* SError High Low
+	stcompet CumInc = ci SError = se High = hi Low = lo, ///
+	by(PAT_AREAOFBIRTH) compet1(1) compet2(2) compet3(3) compet4(4)
+	timer off 1
+	timer list 1
+	di r(t1)/60/60
+
+	*--- Start non parametric competing risk analysis by Ethnicity
+	cap frame drop ethicity
+	frame create ethicity
+	frame ethicity: use ready_to_start_cr
+	keep if PAT_AREAOFBIRTH == 3
+	timer on 1
+	cap drop  CumInc* SError High Low
+	stcompet CumInc = ci SError = se High = hi Low = lo, ///
+	by(PAT_ETHNICITY) compet1(1) compet2(2) compet3(3) compet4(4)
+	timer off 1
+	timer list 1
+	di r(t1)/60/60
+
+
+	 
+	cap drop CumInc_* Low_* High_*
+	foreach num of numlist 1/5  {
+		gen CumInc_`num' = CumInc if new_WL_OUTCOME_OK == `num' 
+		gen Low_`num'  = Low if new_WL_OUTCOME_OK == `num'
+		gen High_`num' = High if new_WL_OUTCOME_OK == `num'
+		}
+
+	save ready_ethinicity_to_start_np_cr, replace
+
+	*---End dataset crude non-parametric cumulative probability LDKT - ethinicity
+
+
+	*---Start dataset crude non-parametric cumulative probability LDKT - immigration
+
+	frame change default
+	use ready_to_start_cr, clear
+
+	stset new_DATE_WL_OUTvsIN, id(PAT_CODE) origin(new_MinDiDataiscrizione) ///
+		fail(new_WL_OUTCOME_OK == 5) ///
+		exit(time new_MinDiDataiscrizione + 365.25*5) sc(365.25)
+
+
+	*--- Start non parametric competing risk analysis
+	timer on 1
+	cap drop  CumInc* SError High Low
+	stcompet CumInc = ci SError = se High = hi Low = lo, ///
+		by(PAT_AREAOFBIRTH) compet1(1) compet2(2) compet3(3) compet4(4)
+	timer off 1
+	timer list 1
+	di r(t1)/60/60
+
+	cap drop CumInc_* Low_* High_*
+	foreach num of numlist 1/5  {
+		gen CumInc_`num' = CumInc if new_WL_OUTCOME_OK == `num' 
+		gen Low_`num'  = Low if new_WL_OUTCOME_OK == `num'
+		gen High_`num' = High if new_WL_OUTCOME_OK == `num'
+		}
+	 
+	cap save ready_to_start_np_cr, replace
+
+
+	*---End dataset crude non-parametric cumulative probability LDKT - immigration
+
+
+
+	*--- Start preparing competing risk regression (Fine-Gray) using stcox
+
+	use ready_to_start_cr, clear
+
+	stset new_DATE_WL_OUTvsIN, id(PAT_CODE) origin(new_MinDiDataiscrizione) ///
+		fail(new_WL_OUTCOME_OK == 1 2 3 4 5) sc(365.25)
+
+
+	encode PAT_CODE, gen(new_PAT_CODE)
+
+	timer on 1
+	stset new_DATE_WL_OUTvsIN, id(new_PAT_CODE) origin(new_MinDiDataiscrizione) ///
+		fail(new_WL_OUTCOME_OK == 1 2 3 4 5) sc(365.25)
+	qui stcrprep, events(new_WL_OUTCOME_OK) keep(PAT_AREAOFBIRTH PAT_ABO_BLOODTYPE ///
+		PAT_GENDER PAT_AGE_WL PAT_ETHNICITY ///
+		new_COM_CASE_MIX new_PRA10 new_spl_log_vint* TXC_AREA)
+	timer off 1
+	timer list 1
+	di r(t1)/60/60
+
+	count
+	generate event = new_WL_OUTCOME_OK == failcode
+	stset tstop [iw = weight_c], failure(event) enter(tstart) noshow
+	save weighted_ready_to_start_cr, replace
+
+end
+
+
+////////////////////////////////////////////////////////////////////////////////
+**#////     		END PREPARING DIFFERENT DATASETS FOR ANALYSES           ////
+////////////////////////////////////////////////////////////////////////////////
+
+*-------------------------------------------------------------------------------
+**# Start Formatted Table 1 - Immigration Status
+*-------------------------------------------------------------------------------
+version 17.0
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use base_datset, clear 
+
+
+
+cap drop _PAT_AREAOFBIRTH
+gen _PAT_AREAOFBIRTH = PAT_AREAOFBIRTH
+table (var) (PAT_AREAOFBIRTH) , ///
+                stat (count _PAT_AREAOFBIRTH) ///
+                stat(count PAT_AGE_WL) stat(mean PAT_AGE_WL) stat(sd PAT_AGE_WL) ///
+                stat(fvfrequency PAT_GENDER PAT_ETHNICITY PAT_ABO_BLOODTYPE DIAL_DIALYSISMODALITY) stat(fvpercent PAT_GENDER PAT_ETHNICITY PAT_ABO_BLOODTYPE DIAL_DIALYSISMODALITY) ///
+                stat(count new_DIAL_VINTAGE) stat(mean new_DIAL_VINTAGE ) stat(sd new_DIAL_VINTAGE) ///
+                stat(fvfrequency new_PRA10 new_COM_CASE_MIX) ///
+                stat(fvpercent new_PRA10 new_COM_CASE_MIX) ///
+                nformat(%3.0f count) ///
+                nformat(%3.1f mean sd) ///
+                nformat(%3.1f fvfrequency) ///
+                nformat(%3.1f fvpercent)
+				
+
+collect remap PAT_AREAOFBIRTH[.m]=total
+collect label dim total "Total"
+collect style header total, title(label) level(hide)
+
+// Change the label of PAT_AREAOFBIRTH
+collect label dim PAT_AREAOFBIRTH "Patient Area of Birth", modify
+               
+// don't show stat description along rows
+collect style header result, level(hide)
+collect preview
+
+// put frequency and percent in the same column as mean and sd, respectively
+collect recode result fvfrequency = mean fvpercent = sd
+collect layout (var) (total#result PAT_AREAOFBIRTH[1 2 3]#result)
+
+// display percent (i.e. sd column) as %
+foreach x in PAT_GENDER PAT_ETHNICITY PAT_ABO_BLOODTYPE DIAL_DIALYSISMODALITY new_PRA10 new_COM_CASE_MIX  {
+        collect style cell result[sd]#var[PAT_AREAOFBIRTH `x'], sformat("%s%%")
+         }
+
+
+// display SD within brackets
+collect style cell result[sd]#var[PAT_AGE_WL new_DIAL_VINTAGE], sformat("(%s)")
+collect preview
+
+
+// display frequency (i.e. mean column) as integer
+collect style cell result[mean]#var[PAT_GENDER PAT_ETHNICITY PAT_ABO_BLOODTYPE DIAL_DIALYSISMODALITY new_PRA10 new_COM_CASE_MIX], nformat(%4.0f)
+collect preview
+
+// calculate-save P values for continuous vars and tag vars
+cap program drop pkwallis
+    program define pkwallis, rclass
+        version 17
+        syntax varname [if] [in], BY(varname)
+		marksample Touse
+        markout `Touse' `by', strok
+        qui kwallis `varlist' if `Touse'==1, by(`by')
+        return scalar p  = chi2tail(r(df), r(chi2_adj))
+    end
+foreach x in PAT_AGE_WL new_DIAL_VINTAGE {
+  qui: collect r(p), tag(var[`x']): pkwallis  `x', by(PAT_AREAOFBIRTH)
+         }
+
+
+// calculate-save P values for dichorhomous vars and tag vars
+foreach x in PAT_GENDER PAT_ABO_BLOODTYPE DIAL_DIALYSISMODALITY new_PRA10 new_COM_CASE_MIX {
+        collect r(p), tag(var[0.`x']):  tab  PAT_AREAOFBIRTH `x', chi2
+         } 
+		 
+foreach x in  PAT_ETHNICITY  {
+        collect r(p), tag(var[1.`x']):  tab  PAT_AREAOFBIRTH `x', chi2
+         }       
+        
+
+// attach columns for result levels p and p_exact (if calculated)
+collect layout (var) (total#result PAT_AREAOFBIRTH[1 2 3]#result result[p p_exact])
+
+// recode var levels to get P value in the first row of categorical vars (if calculated)
+foreach x in PAT_GENDER  PAT_ABO_BLOODTYPE DIAL_DIALYSISMODALITY new_PRA10 new_COM_CASE_MIX  {
+        collect recode var `x' = 0.`x', fortags(result[p_exact])
+         }
+foreach x in PAT_ETHNICITY  {
+        collect recode var `x' = 1.`x', fortags(result[p_exact])
+         }
+        
+// display P values with three digits
+collect style cell result[p p_exact], nformat(%4.3f)
+
+// label all p-values results as "P value" (if exact p values calculated)
+collect label levels result p "P value", modify
+collect label levels result p_exact "P value", modify
+collect style header result[p], level(label)
+collect style header result[p_exact], level(label)
+
+// display P value from the two type of stat test in a single column (if exact)
+collect recode result p_exact = p
+collect preview
+
+// change the var label of values and vars
+collect label values PAT_AREAOFBIRTH 1 "EU-born" 2 "Eastern European-born" 3 "Non-European-born", modify
+collect label levels var _PAT_AREAOFBIRTH "Number of Patients", modify
+collect label list var, all
+
+
+// set the layout
+collect label list PAT_AREAOFBIRTH, all
+// do not draw vertical lines
+collect style cell cell_type, border(right, pattern(nil))
+
+// draw a lower margin line below the column header foreign
+collect style cell cell_type[column-header]#PAT_AREAOFBIRTH[1 2 3], border(bottom, pattern(single))
+
+collect style row stack, nobinder
+collect preview
+
+// export tables
+* collect export Table1.docx, replace
+collect export Table1.html, replace
+collect export Table1.txt, replace
+collect export Table1.docx, replace
+
+*-------------------------------------------------------------------------------
+**# End Formatted Table 1 - Immigration Status
+*-------------------------------------------------------------------------------
+
+
+*-------------------------------------------------------------------------------
+**# Start Formatted Table 1 - Ethinicity
+*-------------------------------------------------------------------------------
+version 17.0
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use base_datset, clear 
+
+
+
+cap drop _PAT_ETHNICITY
+gen _PAT_ETHNICITY = PAT_ETHNICITY
+table (var) (PAT_ETHNICITY) , ///
+                stat (count _PAT_ETHNICITY) ///
+                stat(count PAT_AGE_WL) stat(mean PAT_AGE_WL) stat(sd PAT_AGE_WL) ///
+                stat(fvfrequency PAT_GENDER PAT_ABO_BLOODTYPE DIAL_DIALYSISMODALITY) stat(fvpercent PAT_GENDER PAT_ABO_BLOODTYPE DIAL_DIALYSISMODALITY) ///
+                stat(count new_DIAL_VINTAGE) stat(mean new_DIAL_VINTAGE) stat(sd new_DIAL_VINTAGE) ///
+                stat(fvfrequency new_PRA10 new_COM_CASE_MIX) ///
+                stat(fvpercent new_PRA10 new_COM_CASE_MIX) ///
+                nformat(%3.0f count) ///
+                nformat(%3.1f mean sd) ///
+                nformat(%3.1f fvfrequency) ///
+                nformat(%3.1f fvpercent)
+				
+
+collect remap PAT_ETHNICITY[.m]=total
+collect label dim total "Total"
+collect style header total, title(label) level(hide)
+
+// Change the label of PAT_ETHNICITY
+collect label dim PAT_ETHNICITY "Ethnicity", modify
+               
+// don't show stat description along rows
+collect style header result, level(hide)
+collect preview
+
+// put frequency and percent in the same column as mean and sd, respectively
+collect recode result fvfrequency = mean fvpercent = sd
+collect layout (var) (total#result PAT_ETHNICITY[1 2 3 4 5]#result)
+
+// display percent (i.e. sd column) as %
+foreach x in PAT_GENDER PAT_ABO_BLOODTYPE DIAL_DIALYSISMODALITY new_PRA10 new_COM_CASE_MIX  {
+        collect style cell result[sd]#var[PAT_ETHNICITY `x'], sformat("%s%%")
+         }
+
+
+// display SD within brackets
+collect style cell result[sd]#var[PAT_AGE_WL new_DIAL_VINTAGE], sformat("(%s)")
+collect preview
+
+
+// display frequency (i.e. mean column) as integer
+collect style cell result[mean]#var[PAT_GENDER PAT_ABO_BLOODTYPE DIAL_DIALYSISMODALITY new_PRA10 new_COM_CASE_MIX], nformat(%4.0f)
+collect preview
+
+// calculate-save P values for continuous vars and tag vars
+cap program drop pkwallis
+    program define pkwallis, rclass
+        version 17
+        syntax varname [if] [in], BY(varname)
+		marksample Touse
+        markout `Touse' `by', strok
+        qui kwallis `varlist' if `Touse'==1, by(`by')
+        return scalar p  = chi2tail(r(df), r(chi2_adj))
+    end
+foreach x in PAT_AGE_WL new_DIAL_VINTAGE  {
+  qui: collect r(p), tag(var[`x']): pkwallis  `x', by(PAT_ETHNICITY)
+         }
+
+
+// calculate-save P values for dichorhomous vars and tag vars
+foreach x in PAT_GENDER PAT_ABO_BLOODTYPE DIAL_DIALYSISMODALITY new_PRA10 new_COM_CASE_MIX {
+        collect r(p), tag(var[0.`x']):  tab  PAT_ETHNICITY `x', chi2
+         } 
+		 
+// attach columns for result levels p and p_exact (if calculated)
+collect layout (var) (total#result PAT_ETHNICITY[1 2 3 4 5]#result result[p p_exact])
+
+// recode var levels to get P value in the first row of categorical vars (if calculated)
+foreach x in PAT_GENDER  PAT_ABO_BLOODTYPE DIAL_DIALYSISMODALITY new_PRA10 new_COM_CASE_MIX  {
+        collect recode var `x' = 0.`x', fortags(result[p_exact])
+         }
+
+        
+// display P values with three digits
+collect style cell result[p p_exact], nformat(%4.3f)
+
+// label all p-values results as "P value" (if exact p values calculated)
+collect label levels result p "P value", modify
+collect label levels result p_exact "P value", modify
+collect style header result[p], level(label)
+collect style header result[p_exact], level(label)
+
+// display P value from the two type of stat test in a single column (if exact)
+collect recode result p_exact = p
+collect preview
+
+// change the var label of values and vars
+collect label levels var _PAT_ETHNICITY "Number of Patients", modify
+collect label list var, all
+
+
+// set the layout
+collect label list PAT_ETHNICITY, all
+// do not draw vertical lines
+collect style cell cell_type, border(right, pattern(nil))
+
+// draw a lower margin line below the column header foreign
+collect style cell cell_type[column-header]#PAT_ETHNICITY[1 2 3 4 5], border(bottom, pattern(single))
+
+collect style row stack, nobinder
+collect preview
+
+// export tables
+* collect export Table1.docx, replace
+collect export Table1_Ethnicity.html, replace
+collect export Table1_Ethnicity.txt, replace
+collect export Table1_Ethinicity.docx, replace
+
+*-------------------------------------------------------------------------------
+**# End Formatted Table 1 - Ethncity
+*-------------------------------------------------------------------------------
+
+
+*-------------------------------------------------------------------------------
+**# End   Table 1
+*-------------------------------------------------------------------------------
+
+
+*-------------------------------------------------------------------------------
+* Start Table Countries
+*-------------------------------------------------------------------------------
+
+version 17.0
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use base_datset, clear 
+
+table  (PAT_COUNTRYOFBIRTH_REC ) ( ) if PAT_AREAOFBIRTH == 1 , nototal 
+table  (PAT_COUNTRYOFBIRTH_REC ) ( ) if PAT_AREAOFBIRTH == 2 , nototal
+table  (PAT_COUNTRYOFBIRTH_REC ) ( ) if PAT_AREAOFBIRTH ==  3, nototal  
+
+*-------------------------------------------------------------------------------
+* End Table Countries
+*-------------------------------------------------------------------------------
+
+
+
+*-------------------------------------------------------------------------------
+**# Start Amount of follow-up
+*-------------------------------------------------------------------------------
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use base_datset, clear
+tab new_WL_OUTCOME_OK if !missing(_t)
+stdes
+*-------------------------------------------------------------------------------
+**# End Amount of follow-up
+*-------------------------------------------------------------------------------
+*-------------------------------------------------------------------------------
+**# Start generating datasets for competing risk analysis
+*-------------------------------------------------------------------------------
+CMPRSK_PREPARE
+*-------------------------------------------------------------------------------
+**# End generating datasets for competing risk analysis
+*------------------------------------------------------------------------------
+
+*-------------------------------------------------------------------------------
+**# Start Crude Non-Parametric Cumulative Probability LDKT - ethnicity
+*-------------------------------------------------------------------------------
+
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use ready_ethinicity_to_start_np_cr, clear
+
+**#---Plot Cumulative Probabilities by Ethnicity 
+tw line CumInc_* _t if _t < 5, ///
+by(PAT_ETHNICITY, rows(1) note("Non-parametric competitive crude cumulative incidence")) ///
+connect(J J J J J) ///
+lcolor(black      maroon forest_green navy     dkorange) ///
+lpatter(shortdash solid  dash         longdash dash_dot ) ///
+sort ///
+ytitle("Cumulative Probability (%)") ///
+ylabel(0 "0" .1 "10" .2 "20" .3 "30" .4 "40" .5 "50" .6 "60" .7 "70" , angle(horizontal) grid format(%3.0f)) ///
+ymtick(0(0.05).7, grid) ///
+ yscale(titlegap(2)) ///
+xtitle("Year from Wait-Listing") xscale(titlegap(2)) ///
+xlabel(0(1)5) xsc(range(0 5))  ///
+legend(order( 3 "DDKT" 5 "LDKT" 4 "KT AT FOREIGN CENTER" 1 "DEATH" 2 "WITHDRAWAL FROM W.L."  ) ///
+size(*0.6) bmargin(t=5) pos(12) cols(1)) ///
+scheme(s1mono)
+cap graph export crude_ci_ethnicity_cmprsk.png, replace 
+
+**Black and White version
+
+tw line CumInc_* _t if _t < 5, ///
+by(PAT_ETHNICITY, rows(1) note("Non-parametric competitive crude cumulative incidence")) ///
+connect(J J J J J) ///
+lcolor(gs3 black gs6 gs9 gs12) ///
+lpatter(shortdash solid dash longdash dash_dot) ///
+sort ///
+ytitle("Cumulative Probability (%)") ///
+ylabel(0 "0" .1 "10" .2 "20" .3 "30" .4 "40" .5 "50" .6 "60" .7 "70" , angle(horizontal) grid format(%3.0f)) ///
+ymtick(0(0.05).7, grid) ///
+ yscale(titlegap(2)) ///
+xtitle("Year from Wait-Listing") xscale(titlegap(2)) ///
+xlabel(0(1)5) xsc(range(0 5))  ///
+legend(order( 3 "DDKT" 5 "LDKT" 4 "KT AT FOREIGN CENTER" 1 "DEATH" 2 "WITHDRAWAL FROM W.L."  ) ///
+size(*0.6) bmargin(t=5) pos(12) cols(1)) ///
+scheme(s1mono)
+cap graph export crude_ci_ethnicity_cmprsk_BW.png, replace 
+
+
+**#--- Extract 5-yrs point estimates LDKT and 95%CI from the plots
+
+foreach num of numlist 2/5 {
+    qui summ CumInc_5 if PAT_ETHNICITY == `num'
+	local ldkt_ci = r(max) * 100
+	qui summ Low_5 if PAT_ETHNICITY == `num'
+	local ldkt_lb = r(max) * 100
+	qui summ High_5 if PAT_ETHNICITY == `num'
+	local ldkt_ub = r(max) * 100
+	di in ye _col(8) "5-yr Probability (%) LDKT, crude `: label (PAT_ETHNICITY) `num'': "  in wh %3.1f `ldkt_ci' _skip(1) "(95%CI: " %3.1f `ldkt_lb' " to " %3.1f `ldkt_ub' ")"
+   }  
+   
+
+   
+*-------------------------------------------------------------------------------
+**# End Crude Non-Parametric Cumulative Probability LDKT - ethnicity
+*-------------------------------------------------------------------------------
+
+
+*-------------------------------------------------------------------------------
+**# Start Crude Non-Parametric Cumulative Probability LDKT - immigration status
+*-------------------------------------------------------------------------------
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use ready_to_start_np_cr, clear
+
+**#---Plot Cumulative Probabilities by Immigration Status 
+tw line CumInc_* _t if _t < 5, ///
+by(PAT_AREAOFBIRTH, rows(1) note("Non-parametric competitive crude cumulative incidence")) ///
+connect(J J J J J) ///
+lcolor(black maroon forest_green navy dkorange) ///
+lpatter(shortdash solid dash longdash  dash_dot) ///
+sort ///
+ytitle("Cumulative Probability (%)") ///
+ylabel(0 "0" .1 "10" .2 "20" .3 "30" .4 "40" .5 "50" .6 "60" .7 "70" , angle(horizontal) grid format(%3.0f)) ///
+ymtick(0(0.05).7, grid) ///
+ yscale(titlegap(2)) ///
+xtitle("Year from Wait-Listing") xscale(titlegap(2)) ///
+xlabel(0(1)5) xsc(range(0 5))  ///
+legend(order( 3 "DDKT" 5 "LDKT" 4 "KT AT FOREIGN CENTER" 1 "DEATH" 2 "WITHDRAWAL FROM W.L."  ) ///
+size(*0.6) bmargin(t=5) pos(12) cols(1)) ///
+scheme(s1mono)
+cap graph export crude_ci_cmprsk.png, replace
+
+**# Black and White version
+tw line CumInc_* _t if _t < 5, ///
+by(PAT_AREAOFBIRTH, rows(1) note("Non-parametric competitive crude cumulative incidence")) ///
+connect(J J J J J) ///
+lcolor(gs3 black gs6 gs9 gs12) ///
+lpatter(shortdash solid dash longdash dash_dot) ///
+sort ///
+ytitle("Cumulative Probability (%)") ///
+ylabel(0 "0" .1 "10" .2 "20" .3 "30" .4 "40" .5 "50" .6 "60" .7 "70" , angle(horizontal) grid format(%3.0f)) ///
+ymtick(0(0.05).7, grid) ///
+ yscale(titlegap(2)) ///
+xtitle("Year from Wait-Listing") xscale(titlegap(2)) ///
+xlabel(0(1)5) xsc(range(0 5))  ///
+legend(order( 3 "DDKT" 5 "LDKT" 4 "KT AT FOREIGN CENTER" 1 "DEATH" 2 "WITHDRAWAL FROM W.L."  ) ///
+size(*0.6) bmargin(t=5) pos(12) cols(1)) ///
+scheme(s1mono)
+cap graph export crude_ci_cmprsk_BW.png, replace 
+
+
+**#--- Extract 5-yrs point estimates LDKT and 95%CI from the plots
+foreach num of numlist 1/3 {
+    qui summ CumInc_5 if PAT_AREAOFBIRTH == `num'
+	local ldkt_ci = r(max) * 100
+	qui summ Low_5 if PAT_AREAOFBIRTH == `num'
+	local ldkt_lb = r(max) * 100
+	qui summ High_5 if PAT_AREAOFBIRTH == `num'
+	local ldkt_ub = r(max) * 100
+	di in ye _col(8) "5-yr Probability (%) LDKT, crude `: label (PAT_AREAOFBIRTH) `num'': "  in wh %3.1f `ldkt_ci' _skip(1) "(95%CI: " %3.1f `ldkt_lb' " to " %3.1f `ldkt_ub' ")"
+   } 
+   
+   
+
+*-------------------------------------------------------------------------------
+**# End Crude Non-Parametric Cumulative Probability LDKT - immigration status
+*-------------------------------------------------------------------------------
+
+
+*-------------------------------------------------------------------------------
+**# Start Adjusted Analysis: Competing Risk Regression LDKT - ethnicity
+*-------------------------------------------------------------------------------
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use weighted_ready_to_start_cr, clear
+qui stset tstop [pw = weight_c], failure(event) enter(tstart) noshow
+keep if PAT_AREAOFBIRTH == 3
+
+
+timer on 1
+qui stcox i.PAT_ETHNICITY i.PAT_ABO_BLOODTYPE ///
+	i.PAT_GENDER (c.PAT_AGE_WL##c.PAT_AGE_WL) ///
+	i.new_COM_CASE_MIX i.new_PRA10 c.new_spl_log_vint* ///
+	 if failcode == 5, ///
+	nolog vce(cluster new_PAT_CODE)
+timer off 1
+timer list 1
+di r(t1)/60/60
+estimate save est_stcrcox, replace
+qui stcox, coeflegend
+
+di in ye _col(8) "----> LDKT, adjusted: Asian vs Hispanic"
+test _b[3.PAT_ETHNICITY] = 0
+di in ye _col(8) "----> LDKT, adjusted: Asian vs African" 
+test _b[4.PAT_ETHNICITY] = 0
+di in ye _col(8) "----> LDKT, adjusted: Asian vs Other"
+test _b[5.PAT_ETHNICITY] = 0
+di in ye _col(8) "----> LDKT, adjusted: Hispanic vs African"
+test _b[3.PAT_ETHNICITY] = _b[4.PAT_ETHNICITY]
+di in ye _col(8) "----> LDKT, adjusted: Hispanic vs Other"
+test _b[3.PAT_ETHNICITY] = _b[5.PAT_ETHNICITY]
+di in ye _col(8) "----> LDKT, adjusted: African vs Other"
+test _b[4.PAT_ETHNICITY] = _b[5.PAT_ETHNICITY]
+
+di in ye _col(8) "----> LDKT, adjusted: Relative Probability Hispanic vs Asian"
+lincom _b[3.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> LDKT, adjusted: Relative Probability African vs Asian"
+lincom _b[4.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> LDKT, adjusted: Relative Probability Other vs Asian"
+lincom _b[5.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> LDKT, adjusted: Relative Probability Hispanic vs African"
+lincom _b[3.PAT_ETHNICITY] - _b[4.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> LDKT, adjusted: Relative Probability Hispanic vs Other"
+lincom _b[3.PAT_ETHNICITY] - _b[5.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> LDKT, adjusted: Relative Probability African vs Other"
+lincom _b[4.PAT_ETHNICITY] - _b[5.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+
+
+
+
+*-------------------------------------------------------------------------------
+**# End Adjusted Analysis: Competing Risk Regression LDKT - ethnicity
+*-------------------------------------------------------------------------------
+
+
+*-------------------------------------------------------------------------------
+**# Start Adjusted Analysis: Competing Risk Regression LDKT - immigration status
+*-------------------------------------------------------------------------------
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use weighted_ready_to_start_cr, clear
+qui stset tstop [pw = weight_c], failure(event) enter(tstart) noshow
+
+timer on 1
+qui stcox i.PAT_AREAOFBIRTH i.PAT_ABO_BLOODTYPE ///
+	i.PAT_GENDER (c.PAT_AGE_WL##c.PAT_AGE_WL) ///
+	i.new_COM_CASE_MIX i.new_PRA10 c.new_spl_log_vint* ///
+	 if failcode == 5, ///
+	nolog vce(cluster new_PAT_CODE)
+timer off 1
+timer list 1
+di r(t1)/60/60
+estimate save est_stcrcox, replace
+qui stcox, coeflegend
+
+di in ye _col(8) "----> LDKT, adjusted: EU-born vs Eastern European-born"
+test _b[2.PAT_AREAOFBIRTH] = 0
+di in ye _col(8) "----> LDKT, adjusted: EU-born vs Non-European-born"
+test _b[3.PAT_AREAOFBIRTH] = 0
+di in ye _col(8) "----> LDKT, adjusted: Eastern European-born vs Non-European-born"
+test _b[2.PAT_AREAOFBIRTH] = _b[3.PAT_AREAOFBIRTH]
+
+di in ye _col(8) "----> LDKT, adjusted: Relative Probability Eastern European-born vs EU-born"
+lincom _b[2.PAT_AREAOFBIRTH], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> LDKT, adjusted: Relative Probability Non-European-born vs EU-born"
+lincom _b[3.PAT_AREAOFBIRTH], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> LDKT, adjusted: Relative Probability Eastern European-born vs Non-European-born"
+lincom _b[2.PAT_AREAOFBIRTH] - _b[3.PAT_AREAOFBIRTH], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+
+
+*-------------------------------------------------------------------------------
+**# End Adjusted Analysis: Competing Risk Regression LDKT - immigration status
+*-------------------------------------------------------------------------------
+
+
+
+
+*-------------------------------------------------------------------------------
+**# Start Crude Non-Parametric Cumulative Probability DDKT - ethnicity
+*-------------------------------------------------------------------------------
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use ready_ethinicity_to_start_np_cr, clear
+
+
+qui stset new_DATE_WL_OUTvsIN, id(PAT_CODE) origin(new_MinDiDataiscrizione) ///
+	exit(time new_MinDiDataiscrizione + 365.25*5) ///
+	fail(new_WL_OUTCOME_OK == 3) sc(365.25)
+
+
+**#--- Extract 5-yrs point estimates DDKT and 95%CI from the plots
+foreach num of numlist 2/5 {
+    qui summ CumInc_3 if PAT_ETHNICITY == `num'
+	local ldkt_ci = r(max) * 100
+	qui summ Low_3 if PAT_ETHNICITY == `num'
+	local ldkt_lb = r(max) * 100
+	qui summ High_3 if PAT_ETHNICITY == `num'
+	local ldkt_ub = r(max) * 100
+	di in ye _col(8) "5-yr Probability (%) DDKT, crude `: label (PAT_ETHNICITY) `num'': "  in wh %3.1f `ldkt_ci' _skip(1) "(95%CI: " %3.1f `ldkt_lb' " to " %3.1f `ldkt_ub' ")"
+   }  
+   
+   
+   
+*-------------------------------------------------------------------------------
+**# End Crude Non-Parametric Cumulative Probability DDKT - ethnicity
+*-------------------------------------------------------------------------------
+
+
+*-------------------------------------------------------------------------------
+**# Start Crude Non-Parametric Cumulative Probability DDKT - immigration status
+*-------------------------------------------------------------------------------
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use ready_to_start_np_cr, clear
+
+
+
+*---test crude differences in the incidence of DDKT
+qui stset new_DATE_WL_OUTvsIN, id(PAT_CODE) origin(new_MinDiDataiscrizione) ///
+	exit(time new_MinDiDataiscrizione + 365.25*5) ///
+	fail(new_WL_OUTCOME_OK == 3) sc(365.25)
+
+
+**#--- Extract 5-yrs point estimates DDKT and 95%CI from the plots
+foreach num of numlist 1/3 {
+    qui summ CumInc_3 if PAT_AREAOFBIRTH == `num'
+	local ldkt_ci = r(max) * 100
+	qui summ Low_3 if PAT_AREAOFBIRTH == `num'
+	local ldkt_lb = r(max) * 100
+	qui summ High_3 if PAT_AREAOFBIRTH == `num'
+	local ldkt_ub = r(max) * 100
+	di in ye _col(8) "5-yr Probability (%) DDKT, crude `: label (PAT_AREAOFBIRTH) `num'': "  in wh %3.1f `ldkt_ci' _skip(1) "(95%CI: " %3.1f `ldkt_lb' " to " %3.1f `ldkt_ub' ")"
+   }   
+
+
+*-------------------------------------------------------------------------------
+**# End Crude Non-Parametric Cumulative Probability DDKT - immigration status
+*-------------------------------------------------------------------------------
+
+
+*-------------------------------------------------------------------------------
+**# Start Adjusted Analysis: Competing Risk Regression DDKT - ethnicity
+*-------------------------------------------------------------------------------
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use weighted_ready_to_start_cr, clear
+qui stset tstop [pw = weight_c], failure(event) enter(tstart) noshow
+keep if PAT_AREAOFBIRTH == 3
+
+
+timer on 1
+qui stcox i.PAT_ETHNICITY i.PAT_ABO_BLOODTYPE ///
+	i.PAT_GENDER (c.PAT_AGE_WL##c.PAT_AGE_WL) ///
+	i.new_COM_CASE_MIX i.new_PRA10 c.new_spl_log_vint* ///
+	 if failcode == 3, ///
+	nolog vce(cluster new_PAT_CODE)
+timer off 1
+timer list 1
+di r(t1)/60/60
+estimate save est_stcrcox, replace
+qui stcox, coeflegend
+
+di in ye _col(8) "----> DDKT, adjusted: Asian vs Hispanic" 
+test _b[3.PAT_ETHNICITY] = 0
+di in ye _col(8) "----> DDKT, adjusted: Asian vs African" 
+test _b[4.PAT_ETHNICITY] = 0
+di in ye _col(8) "----> DDKT, adjusted: Asian vs Other" 
+test _b[5.PAT_ETHNICITY] = 0
+di in ye _col(8) "----> DDKT, adjusted: Hispanic vs African"
+test _b[3.PAT_ETHNICITY] = _b[4.PAT_ETHNICITY]
+di in ye _col(8) "----> DDKT, adjusted: Hispanic vs Other"
+test _b[3.PAT_ETHNICITY] = _b[5.PAT_ETHNICITY]
+di in ye _col(8) "----> DDKT, adjusted: African vs Other" 
+test _b[4.PAT_ETHNICITY] = _b[5.PAT_ETHNICITY]
+
+di in ye _col(8) "----> DDKT, adjusted: Relative Probability Hispanic vs Asian" 
+lincom _b[3.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> DDKT, adjusted: Relative Probability African vs Asian"
+lincom _b[4.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> DDKT, adjusted: Relative Probability Other vs Asian" 
+lincom _b[5.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> DDKT, adjusted: Relative Probability Hispanic vs African"
+lincom _b[3.PAT_ETHNICITY] - _b[4.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> DDKT, adjusted: Relative Probability Hispanic vs Other"
+lincom _b[3.PAT_ETHNICITY] - _b[5.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> DDKT, adjusted: Relative Probability African vs Other" 
+lincom _b[4.PAT_ETHNICITY] - _b[5.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+
+
+
+
+*-------------------------------------------------------------------------------
+**# End Adjusted Analysis: Competing Risk Regression DDKT - ethnicity
+*-------------------------------------------------------------------------------
+
+
+*-------------------------------------------------------------------------------
+**# Start Adjusted Analysis: Competing Risk Regression DDKT - immigration status
+*-------------------------------------------------------------------------------
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use weighted_ready_to_start_cr, clear
+qui stset tstop [pw = weight_c], failure(event) enter(tstart) noshow
+
+timer on 1
+qui stcox i.PAT_AREAOFBIRTH i.PAT_ABO_BLOODTYPE ///
+	i.PAT_GENDER (c.PAT_AGE_WL##c.PAT_AGE_WL) ///
+	i.new_COM_CASE_MIX i.new_PRA10 c.new_spl_log_vint* ///
+	 if failcode == 3, ///
+	nolog vce(cluster new_PAT_CODE)
+timer off 1
+timer list 1
+di r(t1)/60/60
+estimate save est_stcrcox, replace
+qui stcox, coeflegend
+
+di in ye _col(8) "----> DDKT, adjusted: EU-born vs Eastern European-born" 
+test _b[2.PAT_AREAOFBIRTH] = 0
+di in ye _col(8) "----> DDKT, adjusted: EU-born vs Non-European-born"
+test _b[3.PAT_AREAOFBIRTH] = 0
+di in ye _col(8) "----> DDKT, adjusted: Eastern European-born vs Non-European-born"
+test _b[2.PAT_AREAOFBIRTH] = _b[3.PAT_AREAOFBIRTH]
+
+di in ye _col(8) "----> DDKT, adjusted: Relative Probability Eastern European-born vs EU-born" 
+lincom _b[2.PAT_AREAOFBIRTH], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> DDKT, adjusted: Relative Probability Non-European-born vs EU-born"
+lincom _b[3.PAT_AREAOFBIRTH], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> DDKT, adjusted: Relative Probability Eastern European-born vs Non-European-born"
+lincom _b[2.PAT_AREAOFBIRTH] - _b[3.PAT_AREAOFBIRTH], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+
+
+*-------------------------------------------------------------------------------
+**# End Adjusted Analysis: Competing Risk Regression DDKT - immigration status
+*-------------------------------------------------------------------------------
+
+
+
+*-------------------------------------------------------------------------------
+**# Start Non-Parametric Cumulative Probability Withrawal from the WL- Ethnicity
+*-------------------------------------------------------------------------------
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use ready_ethinicity_to_start_np_cr, clear
+
+qui stset new_DATE_WL_OUTvsIN, id(PAT_CODE) origin(new_MinDiDataiscrizione) ///
+	exit(time new_MinDiDataiscrizione + 365.25*5) ///
+	fail(new_WL_OUTCOME_OK == 2) sc(365.25)
+
+
+**#--- Extract 5-yrs point estimates Withdrawal WL and 95%CI from the plots
+
+foreach num of numlist 2/5 {
+    qui summ CumInc_2 if PAT_ETHNICITY == `num'
+	local wtwl_ci = r(max) * 100
+	qui summ Low_2 if PAT_ETHNICITY == `num'
+	local wtwl_lb = r(max) * 100
+	qui summ High_2 if PAT_ETHNICITY == `num'
+	local wtwl_ub = r(max) * 100
+	di in ye _col(8) "5-yr Probability (%) Withdrawal WL, crude `: label (PAT_ETHNICITY) `num'': "  in wh %3.1f `wtwl_ci' _skip(1) "(95%CI: " %3.1f `wtwl_lb' " to " %3.1f `wtwl_ub' ")"
+   } 
+   
+*-------------------------------------------------------------------------------
+**# End Non-Parametric Cumulative Probability Withrawal from the WL- Ethnicity
+*-------------------------------------------------------------------------------
+
+
+*-------------------------------------------------------------------------------
+**# Start Non-Parametric Cumulative Prob. Withrawal WL- Immigration Status
+*-------------------------------------------------------------------------------
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use ready_to_start_np_cr, clear
+
+qui stset new_DATE_WL_OUTvsIN, id(PAT_CODE) origin(new_MinDiDataiscrizione) ///
+	exit(time new_MinDiDataiscrizione + 365.25*5) ///
+	fail(new_WL_OUTCOME_OK == 2) sc(365.25)
+
+**#--- Extract 5-yrs point estimates Withdrawal WL and 95%CI from the plots
+
+foreach num of numlist 1/3 {
+    qui summ CumInc_2 if PAT_AREAOFBIRTH == `num'
+	local wtwl_ci = r(max) * 100
+	qui summ Low_2 if PAT_AREAOFBIRTH == `num'
+	local wtwl_lb = r(max) * 100
+	qui summ High_2 if PAT_AREAOFBIRTH == `num'
+	local wtwl_ub = r(max) * 100
+	di in ye _col(8) "5-yr Probability (%) LDKT, crude `: label (PAT_AREAOFBIRTH) `num'': "  in wh %3.1f `wtwl_ci' _skip(1) "(95%CI: " %3.1f `wtwl_lb' " to " %3.1f `wtwl_ub' ")"
+   }   
+*-------------------------------------------------------------------------------
+**# End Non-Parametric Cumulative Prob. Withrawal WL- Immigration Status
+*-------------------------------------------------------------------------------
+
+
+
+*-------------------------------------------------------------------------------
+**# Start Adjusted Analysis: Competing Risk Regression Withdrawal WL - ethnicity
+*-------------------------------------------------------------------------------
+
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use weighted_ready_to_start_cr, clear
+qui stset tstop [pw = weight_c], failure(event) enter(tstart) noshow
+keep if PAT_AREAOFBIRTH == 3
+
+
+timer on 1
+qui stcox i.PAT_ETHNICITY i.PAT_ABO_BLOODTYPE ///
+	i.PAT_GENDER (c.PAT_AGE_WL##c.PAT_AGE_WL) ///
+	i.new_COM_CASE_MIX i.new_PRA10 c.new_spl_log_vint* ///
+	 if failcode == 2, ///
+	nolog vce(cluster new_PAT_CODE)
+timer off 1
+timer list 1
+di r(t1)/60/60
+estimate save est_stcrcox, replace
+qui stcox, coeflegend
+
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: Asian vs Hispanic"
+test _b[3.PAT_ETHNICITY] = 0
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: Asian vs African" 
+test _b[4.PAT_ETHNICITY] = 0
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: Asian vs Other"
+test _b[5.PAT_ETHNICITY] = 0
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: Hispanic vs African"
+test _b[3.PAT_ETHNICITY] = _b[4.PAT_ETHNICITY]
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: Hispanic vs Other"
+test _b[3.PAT_ETHNICITY] = _b[5.PAT_ETHNICITY]
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: African vs Other"
+test _b[4.PAT_ETHNICITY] = _b[5.PAT_ETHNICITY]
+
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: Relative Probability Hispanic vs Asian"
+lincom _b[3.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: Relative Probability African vs Asian"
+lincom _b[4.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: Relative Probability Other vs Asian"
+lincom _b[5.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: Relative Probability Hispanic vs African"
+lincom _b[3.PAT_ETHNICITY] - _b[4.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: Relative Probability Hispanic vs Other"
+lincom _b[3.PAT_ETHNICITY] - _b[5.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: Relative Probability African vs Other"
+lincom _b[4.PAT_ETHNICITY] - _b[5.PAT_ETHNICITY], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+
+*-------------------------------------------------------------------------------
+**# End Adjusted Analysis: Competing Risk Regression Withdrawal WL - ethnicity
+*-------------------------------------------------------------------------------
+
+
+*-------------------------------------------------------------------------------
+**# Start Adjusted Analysis: Compet. Risk Regr. Withdrawal WL - immigration status
+*-------------------------------------------------------------------------------
+cd "C:\Documenti\GrossiAA\PROJECT_ACCESS TO KT"
+use weighted_ready_to_start_cr, clear
+qui stset tstop [pw = weight_c], failure(event) enter(tstart) noshow
+
+timer on 1
+qui stcox i.PAT_AREAOFBIRTH i.PAT_ABO_BLOODTYPE ///
+	i.PAT_GENDER (c.PAT_AGE_WL##c.PAT_AGE_WL) ///
+	i.new_COM_CASE_MIX i.new_PRA10 c.new_spl_log_vint* ///
+	 if failcode == 2, ///
+	nolog vce(cluster new_PAT_CODE)
+timer off 1
+timer list 1
+di r(t1)/60/60
+estimate save est_stcrcox, replace
+qui stcox, coeflegend
+
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: EU-born vs Eastern European-born"
+test _b[2.PAT_AREAOFBIRTH] = 0
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: EU-born vs Non-European-born"
+test _b[3.PAT_AREAOFBIRTH] = 0
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: Eastern European-born vs Non-European-born"
+test _b[2.PAT_AREAOFBIRTH] = _b[3.PAT_AREAOFBIRTH]
+
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: Relative Probability Eastern European-born vs EU-born"
+lincom _b[2.PAT_AREAOFBIRTH], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: Relative Probability Non-European-born vs EU-born"
+lincom _b[3.PAT_AREAOFBIRTH], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+di in ye _col(8) "----> WITHDRAWAL WL, adjusted: Relative Probability Eastern European-born vs Non-European-born"
+lincom _b[2.PAT_AREAOFBIRTH] - _b[3.PAT_AREAOFBIRTH], eform  cformat(%3.2f) pformat(%4.3f) sformat(%3.2f)
+
+
+*-------------------------------------------------------------------------------
+**# End Adjusted Analysis: Compet. Risk Regr. Withdrawal WL - immigration status
+*-------------------------------------------------------------------------------
+
+exit
+
